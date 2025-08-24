@@ -5,7 +5,7 @@ import datetime as dt
 from typing import Optional
 
 import yfinance as yf
-from ..util.http import get_session  # http.py lives in api/util/
+from ..util.http import get_session, reset_session  # http.py lives in api/util/
 
 _session = None
 
@@ -97,6 +97,31 @@ def get_fast_info(symbol: str) -> dict:
 
 
 # ---------- Earnings (yfinance helper) ----------
+
+def get_revenue_data(symbol: str):
+    """
+    Get revenue estimates and actuals for earnings analysis.
+    Returns dict with estimates and actuals.
+    """
+    try:
+        t = yf.Ticker(symbol.upper(), session=_yf_session())
+        
+        # Get revenue estimates
+        rev_est = t.get_revenue_estimate()
+        
+        # Get actual revenue from quarterly financials
+        qf = t.quarterly_financials
+        actual_revenue = None
+        if not qf.empty and 'Total Revenue' in qf.index:
+            actual_revenue = qf.loc['Total Revenue']
+            
+        return {
+            'estimates': rev_est if not rev_est.empty else None,
+            'actuals': actual_revenue if actual_revenue is not None else None
+        }
+    except Exception:
+        return {'estimates': None, 'actuals': None}
+
 
 def get_earnings_dates(symbol: str, limit: int = 12):
     """

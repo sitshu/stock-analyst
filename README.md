@@ -25,8 +25,8 @@ cp .env.sample .env
 # 4) Start the backend (FastAPI)
 uv run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 
-# 5) In a new terminal, start the UI (Streamlit)
-uv run streamlit run app/Home.py
+# 5) Start the UI (Streamlit)
+uv run streamlit run main.py
 ```
 
 Open Streamlit (it will auto-open) and set the backend URL if needed
@@ -38,7 +38,7 @@ Open Streamlit (it will auto-open) and set the backend URL if needed
 
 ```
 stock-analyst/
-  app/                # Streamlit UI
+  main.py             # Streamlit UI
   api/                # FastAPI backend (data/web fetch & compute)
   data/               # local caches
   tests/

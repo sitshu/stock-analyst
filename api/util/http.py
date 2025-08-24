@@ -14,6 +14,11 @@ _IMPERSONATE = os.getenv("YF_IMPERSONATE", "0").lower() in ("1", "true", "yes")
 
 _session = None
 
+def reset_session():
+    """Reset the global session (useful when env vars change)"""
+    global _session
+    _session = None
+
 def get_session():
     global _session
     if _session is not None:

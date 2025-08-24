@@ -5,35 +5,87 @@ import pandas as pd
 import numpy as np
 
 from ..models import EarningsEvent, ReactionItem, ReactionResponse, ReactionSummary
-from ..sources.prices_yfinance import get_earnings_dates, get_price_history
+from ..sources.prices_yfinance import get_earnings_dates, get_price_history, get_revenue_data
 
 def _normalize_earnings_df(df: pd.DataFrame) -> pd.DataFrame:
     if df is None or df.empty:
         return pd.DataFrame(columns=[
             "report_date","eps_estimate","eps_actual","surprise_pct"
         ])
-    cols = {c.lower().strip(): c for c in df.columns}
+    
+    # Reset index to make date a column
+    df_reset = df.reset_index()
+    
     out = pd.DataFrame()
-    out["report_date"] = pd.to_datetime(df.get("Earnings Date") or df.get(cols.get("earnings date")), errors="coerce").dt.date
-    out["eps_estimate"] = pd.to_numeric(df.get("EPS Estimate") or df.get(cols.get("eps estimate")), errors="coerce")
-    out["eps_actual"] = pd.to_numeric(df.get("Reported EPS") or df.get(cols.get("reported eps")), errors="coerce")
-    out["surprise_pct"] = pd.to_numeric(df.get("Surprise(%)") or df.get(cols.get("surprise(%)")), errors="coerce")
+    
+    # Handle earnings date
+    if "Earnings Date" in df_reset.columns:
+        out["report_date"] = pd.to_datetime(df_reset["Earnings Date"], errors="coerce").dt.date
+    else:
+        out["report_date"] = None
+        
+    # Handle EPS columns
+    out["eps_estimate"] = pd.to_numeric(df_reset.get("EPS Estimate"), errors="coerce") if "EPS Estimate" in df_reset.columns else None
+    out["eps_actual"] = pd.to_numeric(df_reset.get("Reported EPS"), errors="coerce") if "Reported EPS" in df_reset.columns else None
+    out["surprise_pct"] = pd.to_numeric(df_reset.get("Surprise(%)"), errors="coerce") if "Surprise(%)" in df_reset.columns else None
+    
     out = out.dropna(subset=["report_date"])
     return out.sort_values("report_date", ascending=False)
 
 def get_earnings_events(ticker: str, limit: int = 12) -> List[EarningsEvent]:
     df = _normalize_earnings_df(get_earnings_dates(ticker, limit=limit))
+    
+    # Get revenue data
+    revenue_data = get_revenue_data(ticker)
+    rev_estimates = revenue_data.get('estimates')
+    rev_actuals = revenue_data.get('actuals')
+    
     events: List[EarningsEvent] = []
     for _, r in df.iterrows():
+        revenue_actual = None
+        revenue_estimate = None
+        revenue_surprise_pct = None
+        
+        if rev_actuals is not None and rev_estimates is not None:
+            try:
+                report_date = pd.to_datetime(r["report_date"])
+                
+                # Match actual revenue by finding closest quarter end
+                if hasattr(rev_actuals, 'index'):
+                    quarter_ends = pd.to_datetime(rev_actuals.index)
+                    # Find the quarter end closest to but before/at the earnings date
+                    valid_quarters = quarter_ends[quarter_ends <= report_date + pd.Timedelta(days=45)]
+                    if len(valid_quarters) > 0:
+                        closest_quarter = valid_quarters.max()
+                        revenue_actual = float(rev_actuals[closest_quarter]) / 1e9
+                
+                # Match estimate by quarter timing
+                if not rev_estimates.empty:
+                    # For recent dates, use current quarter (0q), for older dates use year-ago data
+                    days_ago = (pd.Timestamp.now() - report_date).days
+                    if days_ago < 120:  # Recent quarter
+                        if '0q' in rev_estimates.index:
+                            revenue_estimate = float(rev_estimates.loc['0q', 'avg']) / 1e9
+                    else:  # Use year-ago revenue as proxy estimate
+                        if '0q' in rev_estimates.index and 'yearAgoRevenue' in rev_estimates.columns:
+                            revenue_estimate = float(rev_estimates.loc['0q', 'yearAgoRevenue']) / 1e9
+                
+                # Calculate surprise
+                if revenue_actual and revenue_estimate:
+                    revenue_surprise_pct = ((revenue_actual - revenue_estimate) / revenue_estimate) * 100
+                    
+            except Exception:
+                pass
+        
         events.append(EarningsEvent(
             fiscal_quarter=None,
             report_date=r["report_date"],
             eps_actual=(None if pd.isna(r["eps_actual"]) else float(r["eps_actual"])),
             eps_estimate=(None if pd.isna(r["eps_estimate"]) else float(r["eps_estimate"])),
             eps_surprise_pct=(None if pd.isna(r["surprise_pct"]) else float(r["surprise_pct"])),
-            revenue_actual=None,
-            revenue_estimate=None,
-            revenue_surprise_pct=None,
+            revenue_actual=revenue_actual,
+            revenue_estimate=revenue_estimate,
+            revenue_surprise_pct=revenue_surprise_pct,
         ))
     return events
 
