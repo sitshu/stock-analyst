@@ -7,7 +7,7 @@ import plotly.express as px
 st.set_page_config(page_title="Stock Analyst", layout="wide")
 
 st.title("📈 Stock Analyst — Personal")
-backend_default = os.environ.get("BACKEND_URL", "http://localhost:8000")
+backend_default = os.environ.get("BACKEND_URL", "http://127.0.0.1:8000")
 backend_url = st.sidebar.text_input("Backend URL", backend_default)
 
 ticker = st.text_input("Ticker", "AAPL").strip().upper()
